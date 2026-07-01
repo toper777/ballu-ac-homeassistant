@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+
+# Claude Code local settings
+.claude/
+
+# Build / distribution copy (generated from custom_components/)
+# Leading slash anchors to repo root so it does NOT match custom_components/ballu_ac/
+# (Git on Windows matches ignore patterns case-insensitively).
+/Ballu_AC/
+
+# OS
+.DS_Store
+Thumbs.db

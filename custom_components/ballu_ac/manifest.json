@@ -1,0 +1,23 @@
+{
+  "domain": "ballu_ac",
+  "name": "Ballu AC (syncleo)",
+  "documentation": "https://github.com/toper777/ballu-ac-homeassistant",
+  "issue_tracker": "https://github.com/toper777/ballu-ac-homeassistant/issues",
+  "requirements": [
+    "cryptography>=3.4"
+  ],
+  "dependencies": [
+    "zeroconf"
+  ],
+  "codeowners": [
+    "@toper777"
+  ],
+  "config_flow": true,
+  "iot_class": "local_push",
+  "version": "0.3.0",
+  "zeroconf": [
+    {
+      "type": "_syncleo._udp.local."
+    }
+  ]
+}
