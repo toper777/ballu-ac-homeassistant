@@ -1,5 +1,6 @@
 # Ballu AC — интеграция для Home Assistant (протокол syncleo)
 
+[![Validate](https://github.com/toper777/ballu-ac-homeassistant/actions/workflows/validate.yml/badge.svg)](https://github.com/toper777/ballu-ac-homeassistant/actions/workflows/validate.yml)
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![GitHub release](https://img.shields.io/github/v/release/toper777/ballu-ac-homeassistant)](https://github.com/toper777/ballu-ac-homeassistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
