@@ -23,3 +23,7 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+          # 'brands' requires the integration to be listed in home-assistant/brands,
+          # which needs a separate PR with logo assets. Not required for install as a
+          # HACS custom repository; drop this ignore once brands is submitted.
+          ignore: brands
