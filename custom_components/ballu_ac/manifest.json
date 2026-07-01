@@ -1,19 +1,19 @@
 {
   "domain": "ballu_ac",
   "name": "Ballu AC (syncleo)",
-  "documentation": "https://github.com/toper777/ballu-ac-homeassistant",
-  "issue_tracker": "https://github.com/toper777/ballu-ac-homeassistant/issues",
-  "requirements": [
-    "cryptography>=3.4"
-  ],
-  "dependencies": [
-    "zeroconf"
-  ],
   "codeowners": [
     "@toper777"
   ],
   "config_flow": true,
+  "dependencies": [
+    "zeroconf"
+  ],
+  "documentation": "https://github.com/toper777/ballu-ac-homeassistant",
   "iot_class": "local_push",
+  "issue_tracker": "https://github.com/toper777/ballu-ac-homeassistant/issues",
+  "requirements": [
+    "cryptography>=3.4"
+  ],
   "version": "0.3.0",
   "zeroconf": [
     {
