@@ -22,6 +22,10 @@ env/
 # (Git on Windows matches ignore patterns case-insensitively).
 /Ballu_AC/
 
+# Logo source (brand assets live in home-assistant/brands, not here)
+ballu_src.png
+logo_src.png
+
 # OS
 .DS_Store
 Thumbs.db
