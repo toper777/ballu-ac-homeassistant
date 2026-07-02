@@ -143,7 +143,9 @@ def decrypt_frame(data: bytes, encinkey: bytes, encoutkey: bytes):
     try:
         pt = _dec(_rotate(encinkey, j), _rotate(encoutkey, k), payload)
     except Exception as e:
-        _LOGGER.warning('decrypt error seq=%d: %s', seq, e)
+        # Malformed/undecryptable frame (or spoofed traffic). Keep at DEBUG so a
+        # flood of junk UDP packets can't spam the log (log-spam DoS).
+        _diag('decrypt error seq=%d: %s', seq, e)
         return None
     if len(pt) < 2 or pt[0] != seq:
         return None
@@ -456,9 +458,15 @@ class SyncleoClient:
               payload.hex() if payload else "")
 
         if ftype == 'ACK':
-            self._connected = True
-            self._pending.discard(seq)
-            _diag("  → ACK seq=%d, pending now=%s", seq, sorted(self._pending))
+            # ACK frames are NOT encrypted, so a LAN host could spoof them.
+            # Only honour ACKs once a real (key-validated) handshake completed —
+            # this prevents a spoofed ACK from faking a connection before then.
+            if self._hs_done:
+                self._connected = True
+                self._pending.discard(seq)
+                _diag("  → ACK seq=%d, pending now=%s", seq, sorted(self._pending))
+            else:
+                _diag("  → ACK seq=%d ignored (handshake not done)", seq)
             return
 
         if ftype != 'CMD' or cmd_type is None:

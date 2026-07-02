@@ -150,6 +150,23 @@ logger:
 - **"Invalid credentials" when adding** — the token is wrong; re-copy it from the
   Ballu Home app QR code.
 
+## Security notes
+
+- **The token is your device password.** It's stored in Home Assistant's config
+  and sent (encrypted) to the device. Anyone with your token can control that AC.
+- **mDNS discovery trusts the local network.** Discovery and automatic public-key
+  refresh take the device address and public key from mDNS announcements. A
+  malicious host on the *same LAN* could spoof a syncleo announcement and trick
+  the integration into handshaking with it, potentially capturing the token.
+  Only add/refresh devices on a network you trust; on segmented networks keep IoT
+  and Home Assistant where no untrusted host can spoof mDNS.
+- **QR image URLs are fetched server-side** with SSRF guards (http/https only,
+  private/loopback addresses blocked, 5 MB size cap). Prefer pasting the QR *text*
+  over an image URL when possible.
+
+Found a security issue? Please open an issue (or report privately) on the
+[repository](https://github.com/toper777/ballu-ac-homeassistant).
+
 ## License
 
 [MIT](LICENSE) © toper777

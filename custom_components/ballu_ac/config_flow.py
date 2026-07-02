@@ -133,15 +133,60 @@ async def _decode_qr_image(image_data: bytes) -> str | None:
     return None
 
 
-async def _fetch_and_decode_qr(url: str) -> str | None:
-    """Fetch an image from URL and decode QR code from it."""
+_QR_MAX_BYTES = 5 * 1024 * 1024  # cap fetched image size (memory-DoS guard)
+
+
+async def _url_is_safe(hass, url: str) -> bool:
+    """Reject non-http(s) URLs and anything resolving to a private/loopback IP.
+
+    Guards the server-side fetch below against SSRF (e.g. cloud metadata at
+    169.254.169.254, localhost admin ports, internal hosts). Best-effort: does
+    not fully close DNS-rebinding, but blocks the obvious internal targets.
+    """
+    import asyncio
+    import ipaddress
+    import socket
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return False
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        loop = asyncio.get_running_loop()
+        infos = await loop.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+    except Exception:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            return False
+    return True
+
+
+async def _fetch_and_decode_qr(hass, url: str) -> str | None:
+    """Fetch an image from URL (SSRF-guarded, size-capped) and decode its QR."""
+    if not await _url_is_safe(hass, url):
+        _LOGGER.warning("QR image URL rejected (unsafe scheme or private address)")
+        return None
     try:
         import aiohttp
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-                if resp.status == 200:
-                    data = await resp.read()
-                    return await _decode_qr_image(data)
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+        session = async_get_clientsession(hass)
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status != 200:
+                return None
+            data = b""
+            async for chunk in resp.content.iter_chunked(65536):
+                data += chunk
+                if len(data) > _QR_MAX_BYTES:
+                    _LOGGER.warning("QR image exceeds %d bytes — aborting", _QR_MAX_BYTES)
+                    return None
+            return await _decode_qr_image(data)
     except Exception as e:
         _LOGGER.debug("QR fetch error: %s", e)
     return None
@@ -384,7 +429,7 @@ class BalluConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # QR is only consulted when no token was typed manually.
             if not token and qr_raw:
                 if re.match(r"https?://", qr_raw, re.IGNORECASE):
-                    qr_text = await _fetch_and_decode_qr(qr_raw)
+                    qr_text = await _fetch_and_decode_qr(self.hass, qr_raw)
                     if qr_text is None:
                         errors[CONF_QR_DATA] = "qr_image_failed"
                 else:
@@ -470,7 +515,7 @@ class BalluConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             qr_text = None
 
             if re.match(r"https?://", raw, re.IGNORECASE):
-                qr_text = await _fetch_and_decode_qr(raw)
+                qr_text = await _fetch_and_decode_qr(self.hass, raw)
                 if qr_text is None:
                     errors[CONF_QR_DATA] = "qr_image_failed"
             else:
