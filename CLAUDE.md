@@ -76,6 +76,7 @@ Ballu_AC_homeassistant/
 │       ├── strings.json               # строки UI (источник для переводов)
 │       ├── switch.py                  # SwitchEntity: ионизатор, дисплей
 │       ├── syncleo.py                 # UDP клиент + ACState + криптография
+│       ├── brand/                     # self-served бренд-иконки (HA 2026.3+): icon/logo (+@2x)
 │       └── translations/
 │           ├── en.json                # английский (= strings.json)
 │           └── ru.json                # русский (= strings.json)
