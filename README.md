@@ -1,84 +1,106 @@
-# Ballu AC — интеграция для Home Assistant (протокол syncleo)
+# Ballu AC — Home Assistant integration (syncleo protocol)
 
 [![Validate](https://github.com/toper777/ballu-ac-homeassistant/actions/workflows/validate.yml/badge.svg)](https://github.com/toper777/ballu-ac-homeassistant/actions/workflows/validate.yml)
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![GitHub release](https://img.shields.io/github/v/release/toper777/ballu-ac-homeassistant)](https://github.com/toper777/ballu-ac-homeassistant/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Локальное управление кондиционерами **Ballu** (и другими устройствами RusClimate
-с прошивкой **syncleo**) в Home Assistant по UDP — без облака. Основано на
-реверс-инжиниринге протокола syncleo (X25519 + AES-CBC поверх UDP).
+**English** | [Русский](README.ru.md)
 
-> Интеграция неофициальная, не связана с Ballu / RusClimate. Названия и товарные
-> знаки принадлежат их правообладателям.
+Local control of **Ballu** air conditioners (and other RusClimate devices running
+the **syncleo** firmware) in Home Assistant over UDP — no cloud. Built on a
+reverse-engineered syncleo protocol (X25519 + AES-CBC over UDP).
 
-## Возможности
+> Unofficial integration, not affiliated with Ballu / RusClimate. All names and
+> trademarks belong to their respective owners.
 
-- 🌡️ **Климат**: режимы (авто / охлаждение / осушение / нагрев / вентиляция / выкл),
-  целевая температура 16–30 °C, скорость вентилятора, качание жалюзи.
-- 🎛️ **Пресеты**: турбо, ночной, эко, тихий (взаимоисключающие).
-- 📟 **Сенсор**: температура в комнате.
-- 🔌 **Переключатели**: ионизатор, подсветка дисплея.
-- 📡 **Локально и push**: состояние обновляется мгновенно, без опроса облака
+## Features
+
+- 🌡️ **Climate**: modes (auto / cool / dry / heat / fan only / off), target
+  temperature 16–30 °C, fan speed, louver swing.
+- 🎛️ **Presets**: turbo, night, eco, quiet (mutually exclusive).
+- 📟 **Sensor**: room temperature.
+- 🔌 **Switches**: ionizer, display backlight.
+- 📡 **Local & push**: state updates instantly, no cloud polling
   (`iot_class: local_push`).
-- 🔍 **Автообнаружение** устройств в сети (mDNS) при добавлении.
-- 🔑 **Самовосстановление ключа**: публичный ключ устройства меняется при
-  перезагрузке — интеграция сама пере-резолвит его из mDNS и переподключается.
+- 🔍 **Auto-discovery** of devices on the network (mDNS) when adding.
+- 🔑 **Self-healing key**: the device's public key changes on reboot — the
+  integration re-resolves it from mDNS and reconnects automatically.
 
-## Поддерживаемые устройства
+## Supported devices
 
-- **Ballu Platinum Evolution** (и другие модели с модулем syncleo, `devtype=20`).
-- Прошивка `fw=1.22`, `protocol=3`, порт UDP `41122`.
+- **Ballu Platinum Evolution** (and other models with a syncleo module, `devtype=20`).
+- Firmware `fw=1.22`, `protocol=3`, UDP port `41122`.
 
-Другие устройства RusClimate/Polaris на syncleo с иным `devtype` не поддерживаются
-(команды отличаются) и скрываются при обнаружении.
+Other RusClimate/Polaris syncleo devices with a different `devtype` are not
+supported (their command set differs) and are hidden during discovery.
 
-## Установка
+## Installation
 
-### Через HACS (рекомендуется)
+### Option A — HACS (recommended)
 
-1. HACS → Интеграции → ⋮ → **Пользовательские репозитории**.
-2. Добавьте `https://github.com/toper777/ballu-ac-homeassistant`, категория **Integration**.
-3. Установите «Ballu AC (syncleo)» и **перезапустите** Home Assistant.
+You need [HACS](https://hacs.xyz/) installed first. Then:
 
-### Вручную
+1. Open **HACS** in the Home Assistant sidebar.
+2. Click the **⋮** menu (top-right) → **Custom repositories**.
+3. Paste the repository URL and pick the category:
+   - Repository: `https://github.com/toper777/ballu-ac-homeassistant`
+   - Category: **Integration**
+   - Click **Add**.
+4. Find **Ballu AC (syncleo)** in the list, open it and click **Download**.
+5. **Restart Home Assistant** (Settings → System → ⋮ → Restart).
 
-Скопируйте папку `custom_components/ballu_ac/` в `<config>/custom_components/`
-и **полностью перезапустите** Home Assistant.
+### Option B — Manual
 
-## Настройка
+1. Download this repository (Code → Download ZIP, or clone it).
+2. Copy the folder `custom_components/ballu_ac/` into your Home Assistant config,
+   so you get `<config>/custom_components/ballu_ac/`.
+3. **Fully restart** Home Assistant (not just a YAML reload).
 
-Настройки → Устройства и службы → **Добавить интеграцию** → **Ballu AC**.
+## Configuration
 
-Доступны три способа:
+### Step 1 — Get the token (from the Ballu Home app)
 
-- **Поиск в сети** (рекомендуется) — активное mDNS-сканирование, выберите
-  кондиционер из списка. Останется указать **токен**.
-- **QR-код** — вставьте содержимое QR из приложения Ballu Home (текст или ссылку
-  на изображение); публичный ключ подтянется из mDNS автоматически.
-- **Ручная настройка** — IP, порт, токен, публичный ключ.
+The **token** is the only secret that is *not* announced on the network, so you
+must obtain it once from the official app:
 
-### Где взять токен
+**Ballu Home app** → your device → **Share** → **QR code**.
 
-Токен — это единственный секрет, который **не** анонсируется по сети:
-приложение **Ballu Home** → ваше устройство → **Поделиться** → **QR-код**.
-В QR (текст/URL) содержится токен (32 hex-символа).
+The QR (its text or URL) contains the token — a 32-character hex string. You can
+either scan/copy the QR text, or read the token out of it manually. The device's
+public key is **not** needed manually — it's resolved from mDNS automatically.
 
-Публичный ключ брать вручную не нужно — он автоматически определяется из mDNS.
+### Step 2 — Add the integration
 
-## Сущности
+1. **Settings → Devices & services → Add integration → “Ballu AC”.**
+2. Choose one of three methods:
 
-| Сущность          | Платформа | Описание                                   |
-|-------------------|-----------|--------------------------------------------|
-| Кондиционер       | climate   | режим, температура, вентилятор, жалюзи, пресеты |
-| Room Temperature  | sensor    | температура в комнате                       |
-| Ionizer           | switch    | ионизатор                                   |
-| Display           | switch    | подсветка дисплея                           |
+| Method | What to do |
+|--------|-----------|
+| **Search the network** (recommended) | Active mDNS scan; pick your AC from the list, then enter the **token**. |
+| **QR code** | Paste the QR contents (text or an image URL) from the Ballu Home app; the public key is pulled from mDNS. |
+| **Manual** | Enter IP, port, token and public key by hand. |
 
-## Пример автоматизации
+3. Done — the AC and its entities appear as a device.
 
-Установка конкретной температуры выполняется службой `climate.set_temperature`
-(в блоке «Действие устройства» температуры нет — это ограничение ядра HA):
+> The token is validated during setup: if it's wrong, the device replies to the
+> handshake but rejects commands, and the integration will **refuse to create the
+> entry** with an "invalid credentials" error — so you won't end up with a dead device.
+
+## Entities
+
+| Entity            | Platform | Description                                |
+|-------------------|----------|--------------------------------------------|
+| Air conditioner   | climate  | mode, temperature, fan, swing, presets     |
+| Room Temperature  | sensor   | room temperature                           |
+| Ionizer           | switch   | ionizer                                    |
+| Display           | switch   | display backlight                          |
+
+## Automation example
+
+Setting a specific temperature is done with the `climate.set_temperature` service
+(the “device action” block has no temperature field — that's a Home Assistant core
+limitation, not this integration):
 
 ```yaml
 action: climate.set_temperature
@@ -89,33 +111,32 @@ data:
   hvac_mode: cool
 ```
 
-## Как это работает
+## How it works
 
-Протокол syncleo — UDP на порту 41122 с шифрованием:
+The syncleo protocol is UDP on port 41122, encrypted:
 
-1. X25519 ECDH-обмен с публичным ключом устройства (из mDNS TXT `public=`).
-2. SHA-256 от общего секрета → ключи AES-CBC (с ротацией по номеру пакета).
-3. Handshake с токеном авторизации, затем команды/состояние в шифрованных кадрах.
+1. X25519 ECDH exchange with the device's public key (from mDNS TXT `public=`).
+2. SHA-256 of the shared secret → AES-CBC keys (rotated per packet sequence).
+3. A handshake carrying the auth token, then commands/state in encrypted frames.
 
-Подробное описание протокола, карта команд и заметки по реверс-инжинирингу —
-в [CLAUDE.md](CLAUDE.md).
+Detailed protocol notes and the command map are in [CLAUDE.md](CLAUDE.md).
 
-## Утилиты для исследования (`tools/`)
+## Research tools (`tools/`)
 
-Автономные скрипты (не требуют Home Assistant, только `pip install cryptography zeroconf`):
+Standalone scripts (no Home Assistant required, just `pip install cryptography zeroconf`):
 
 ```bash
-python tools/ballu_listen.py scan   # найти устройства в сети (IP, pubkey)
-python tools/ballu_listen.py        # пассивный слушатель команд
-python tools/ballu_cmd.py           # интерактивная отправка команд
+python tools/ballu_listen.py scan   # find devices on the network (IP, pubkey)
+python tools/ballu_listen.py        # passive command listener
+python tools/ballu_cmd.py           # interactive command sender
 ```
 
-Перед запуском укажите в начале скрипта `DEVICE_IP` и `TOKEN_HEX`
-(публичный ключ определяется автоматически из mDNS).
+Set `DEVICE_IP` and `TOKEN_HEX` at the top of the script first (the public key is
+resolved from mDNS automatically).
 
-## Диагностика
+## Troubleshooting
 
-При проблемах включите подробные логи в `configuration.yaml`:
+Enable verbose logs in `configuration.yaml`:
 
 ```yaml
 logger:
@@ -123,6 +144,12 @@ logger:
     custom_components.ballu_ac: debug
 ```
 
-## Лицензия
+- **Device unavailable / handshake times out** — make sure Home Assistant and the
+  AC are on the same subnet, and that UDP/mDNS isn't blocked. The public key is
+  refreshed automatically if the device rebooted.
+- **"Invalid credentials" when adding** — the token is wrong; re-copy it from the
+  Ballu Home app QR code.
+
+## License
 
 [MIT](LICENSE) © toper777
