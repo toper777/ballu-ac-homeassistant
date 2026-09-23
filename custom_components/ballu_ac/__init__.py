@@ -61,19 +61,17 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.version > 2:
         return False  # downgraded from a newer version of the integration
     if entry.version == 1:
-        host = entry.data[CONF_HOST]
-        port = entry.data.get(CONF_PORT, DEFAULT_PORT)
-        hass.config_entries.async_update_entry(
-            entry,
-            data={
-                **entry.data,
-                CONF_MAC: entry.data.get(CONF_MAC, ""),
+        data = {**entry.data}
+        # Entries without a host (e.g. ignored discoveries) have nothing to freeze.
+        if host := data.get(CONF_HOST):
+            port = data.get(CONF_PORT, DEFAULT_PORT)
+            data.update({
+                CONF_MAC: data.get(CONF_MAC, ""),
                 CONF_UID_BASE: host.replace(".", "_"),
                 CONF_DEVICE_KEY: f"{host}:{port}",
-            },
-            version=2,
-        )
-        _LOGGER.info("Ballu AC %s: migrated config entry to version 2", host)
+            })
+        hass.config_entries.async_update_entry(entry, data=data, version=2)
+        _LOGGER.info("Ballu AC %s: migrated config entry to version 2", entry.title)
     return True
 
 

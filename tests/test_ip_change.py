@@ -91,6 +91,18 @@ async def test_migration_keeps_entity_and_device_ids(hass, fake_net):
     assert entry.unique_id == MAC_A
 
 
+async def test_migration_of_entry_without_data(hass):
+    # "Ignored" discoveries are stored as entries with no data at all.
+    from custom_components.ballu_ac import async_migrate_entry
+
+    entry = MockConfigEntry(domain=DOMAIN, version=1, unique_id=LEGACY_DEVICE, data={})
+    entry.add_to_hass(hass)
+
+    assert await async_migrate_entry(hass, entry)
+    assert entry.version == 2
+    assert dict(entry.data) == {}
+
+
 # ── relocation on setup ──────────────────────────────────────────────────────
 
 async def test_router_change_relocates_by_mac(hass, fake_net):
@@ -187,6 +199,21 @@ async def test_zeroconf_matches_legacy_entry_by_key(hass, fake_net):
     assert entry.data[CONF_HOST] == NEW_IP
     assert entry.data[CONF_MAC] == MAC_A
     assert entry.unique_id == MAC_A
+
+
+async def test_zeroconf_does_not_offer_legacy_entry_with_stale_key(hass, fake_net):
+    # Entry has no MAC yet and an outdated key, but the device is at the same IP:
+    # it must not be offered as a new device.
+    entry = v2_entry(mac="", pubkey=KEY_A1)
+    entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_ZEROCONF}, data=zeroconf(OLD_IP, MAC_A, KEY_A2),
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1
 
 
 async def test_zeroconf_ignores_non_ac_devices(hass, fake_net):
