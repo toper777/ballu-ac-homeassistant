@@ -14,7 +14,7 @@
   "requirements": [
     "cryptography>=3.4"
   ],
-  "version": "0.3.0",
+  "version": "0.4.0",
   "zeroconf": [
     {
       "type": "_syncleo._udp.local."

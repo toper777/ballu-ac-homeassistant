@@ -18,7 +18,15 @@ from homeassistant.const import CONF_HOST, CONF_PORT, CONF_TOKEN, CONF_NAME
 from homeassistant.core import callback
 from homeassistant.helpers import selector
 
-from .const import DOMAIN, CONF_PUBKEY, DEFAULT_PORT
+from . import async_update_connection
+from .const import CONF_MAC, CONF_PUBKEY, DEFAULT_PORT, DOMAIN
+from .discovery import (
+    async_scan,
+    decode_props,
+    is_supported_devtype,
+    mac_from_props,
+    pubkey_from_props,
+)
 
 if TYPE_CHECKING:
     from homeassistant.components.zeroconf import ZeroconfServiceInfo
@@ -27,12 +35,6 @@ _LOGGER = logging.getLogger(__name__)
 
 CONF_QR_DATA = "qr_data"
 
-# mDNS service type announced by syncleo devices
-SYNCLEO_SERVICE = "_syncleo._udp.local."
-# Only these syncleo device types are air conditioners we support. Other
-# syncleo gear (e.g. Polaris humidifiers, devtype=77) shares the same mDNS
-# service but speaks a different command set — hide it from discovery.
-SUPPORTED_DEVTYPES = {"20"}
 # how long to listen for mDNS announcements during an active scan
 DISCOVERY_TIMEOUT = 5.0
 # sentinel value in the discovery list meaning "skip and enter manually"
@@ -206,26 +208,12 @@ def _norm_pubkey(raw: str) -> str:
     return pk
 
 
-def _pubkey_from_props(props: dict[str, str]) -> str:
-    """Extract the 64-hex X25519 public key from mDNS TXT properties.
-
-    The real key is announced in the `public` field. `curve` holds only a
-    small numeric curve id (e.g. "29"), NOT the key — so it is used only as a
-    fallback and accepted only if it happens to be valid 64-hex.
-    """
-    for field in ("public", "pubkey", "curve"):
-        val = (props.get(field) or "").strip().lower()
-        if re.fullmatch(r"[0-9a-fA-F]{64}", val):
-            return val
-    return ""
-
-
 # ── config flow ───────────────────────────────────────────────────────────────
 
 class BalluConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow for Ballu AC. Each device = one config entry."""
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self) -> None:
         self._host:   str = ""
@@ -233,6 +221,7 @@ class BalluConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._pubkey: str = ""
         self._name:   str = "Ballu AC"
         self._token:  str = ""
+        self._mac:    str = ""
         self._discovered: dict[str, dict] = {}
 
     # ── entry point ───────────────────────────────────────────────────────────
@@ -265,76 +254,34 @@ class BalluConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     # ── active network discovery ──────────────────────────────────────────────
 
+    def _configured(self) -> tuple[set[str], set[str]]:
+        """MACs of configured devices, and hosts of entries that lack a MAC."""
+        macs: set[str] = set()
+        hosts: set[str] = set()
+        for entry in self._async_current_entries(include_ignore=False):
+            if entry.data.get(CONF_MAC):
+                macs.add(entry.data[CONF_MAC])
+            else:
+                hosts.add(entry.data.get(CONF_HOST, ""))
+        return macs, hosts
+
     async def _async_discover_devices(self) -> dict[str, dict]:
-        """Actively scan the LAN for syncleo devices via mDNS.
-
-        Uses Home Assistant's shared Zeroconf instance (creating a raw
-        Zeroconf() inside HA is forbidden). Returns {f"{host}:{port}": {...}}.
-        """
-        import asyncio
-
-        from homeassistant.components import zeroconf as ha_zeroconf
-        from zeroconf import ServiceStateChange
-        from zeroconf.asyncio import AsyncServiceBrowser, AsyncServiceInfo
-
-        aiozc = await ha_zeroconf.async_get_async_instance(self.hass)
-        names: list[str] = []
-
-        # zeroconf invokes handlers with keyword arguments, so the parameter
-        # names must match exactly (zeroconf / service_type / name / state_change).
-        def _on_change(zeroconf, service_type, name, state_change) -> None:
-            if state_change is ServiceStateChange.Added and name not in names:
-                names.append(name)
-
-        browser = AsyncServiceBrowser(
-            aiozc.zeroconf, SYNCLEO_SERVICE, handlers=[_on_change]
-        )
-        try:
-            await asyncio.sleep(DISCOVERY_TIMEOUT)
-        finally:
-            await browser.async_cancel()
-
+        """Scan the LAN; return not-yet-configured devices keyed by MAC
+        (or host:port if a device announces no MAC)."""
+        macs, hosts = self._configured()
         devices: dict[str, dict] = {}
-        for name in names:
-            info = AsyncServiceInfo(SYNCLEO_SERVICE, name)
-            if not await info.async_request(aiozc.zeroconf, 3000):
+        for dev in await async_scan(self.hass, DISCOVERY_TIMEOUT):
+            if (dev["mac"] and dev["mac"] in macs) or dev["host"] in hosts:
                 continue
-            addresses = info.parsed_addresses()
-            if not addresses:
-                continue
-            host = addresses[0]
-            port = info.port or DEFAULT_PORT
-            props: dict[str, str] = {}
-            for k, v in (info.properties or {}).items():
-                key = k.decode("ascii", "replace") if isinstance(k, bytes) else str(k)
-                val = v.decode("utf-8", "replace") if isinstance(v, bytes) else (v or "")
-                props[key] = val
-
-            # Keep only air conditioners (devtype=20). A device that announces a
-            # devtype outside the supported set is skipped; a device that does
-            # not announce devtype at all is kept (better to show than to hide).
-            devtype = props.get("devtype", "")
-            if devtype and devtype not in SUPPORTED_DEVTYPES:
-                _LOGGER.debug(
-                    "Skipping non-AC syncleo device %s:%s (devtype=%s, vendor=%s)",
-                    host, port, devtype, props.get("vendor", "?"),
-                )
-                continue
-
-            devices[f"{host}:{port}"] = {
-                "host":   host,
-                "port":   port,
-                "pubkey": _pubkey_from_props(props),
-                "name":   props.get("name") or name.split(".")[0] or "Ballu AC",
-            }
+            devices[dev["mac"] or f"{dev['host']}:{dev['port']}"] = dev
         return devices
 
-    async def _async_pubkey_for_host(self, host: str) -> str:
-        """Scan the network and return the public key announced by `host`."""
-        for dev in (await self._async_discover_devices()).values():
-            if dev["host"] == host and dev["pubkey"]:
-                return dev["pubkey"]
-        return ""
+    async def _async_find_host(self, host: str) -> dict | None:
+        """Scan the LAN and return the device announced at `host`."""
+        for dev in await async_scan(self.hass, DISCOVERY_TIMEOUT):
+            if dev["host"] == host:
+                return dev
+        return None
 
     async def async_step_discovery(self, user_input: dict | None = None):
         """Scan the network and let the user pick a discovered device."""
@@ -354,6 +301,7 @@ class BalluConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._port   = dev["port"]
             self._pubkey = dev["pubkey"]
             self._name   = dev["name"]
+            self._mac    = dev["mac"]
             return await self.async_step_discovery_token()
 
         # First entry into this step: perform the scan.
@@ -462,7 +410,7 @@ class BalluConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors.update(verr)
                 placeholders.update(vph)
                 if not errors:
-                    return self._create_entry(data)
+                    return await self._async_create_entry(data, self._mac)
 
         return self.async_show_form(
             step_id="discovery_token",
@@ -491,7 +439,7 @@ class BalluConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._pubkey = str(user_input.get(CONF_PUBKEY, self._pubkey)).strip()
             errors, placeholders = await self._validate_and_save(user_input)
             if not errors:
-                return self._create_entry(user_input)
+                return await self._async_create_entry(user_input)
         return self.async_show_form(
             step_id="manual",
             data_schema=vol.Schema({
@@ -549,16 +497,15 @@ class BalluConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     # Try to fetch it from the device via mDNS automatically.
                     if not self._pubkey:
                         if self._host:
-                            found = await self._async_pubkey_for_host(self._host)
-                            if found:
-                                self._pubkey = found
+                            dev = await self._async_find_host(self._host)
                         else:
                             devs = await self._async_discover_devices()
-                            if len(devs) == 1:
-                                only = next(iter(devs.values()))
-                                self._host   = only["host"]
-                                self._port   = only["port"]
-                                self._pubkey = only["pubkey"]
+                            dev = next(iter(devs.values())) if len(devs) == 1 else None
+                        if dev:
+                            self._host   = dev["host"]
+                            self._port   = dev["port"]
+                            self._pubkey = dev["pubkey"]
+                            self._mac    = dev["mac"]
 
                     return await self.async_step_qr_confirm()
 
@@ -576,14 +523,17 @@ class BalluConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         placeholders: dict[str, str] = {}
         if user_input is not None:
+            new_host = str(user_input.get(CONF_HOST, self._host)).strip()
+            if new_host != self._host:
+                self._mac = ""  # the MAC we resolved belonged to the old address
             self._name   = user_input.get(CONF_NAME, self._name) or self._name
-            self._host   = str(user_input.get(CONF_HOST, self._host)).strip()
+            self._host   = new_host
             self._port   = int(user_input.get(CONF_PORT, self._port))
             self._token  = str(user_input.get(CONF_TOKEN, self._token)).strip()
             self._pubkey = str(user_input.get(CONF_PUBKEY, self._pubkey)).strip()
             errors, placeholders = await self._validate_and_save(user_input)
             if not errors:
-                return self._create_entry(user_input)
+                return await self._async_create_entry(user_input, self._mac)
         return self.async_show_form(
             step_id="qr_confirm",
             data_schema=vol.Schema({
@@ -602,25 +552,49 @@ class BalluConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_zeroconf(self, discovery_info: "ZeroconfServiceInfo"):
         host  = str(discovery_info.host)
         port  = discovery_info.port or DEFAULT_PORT
-        raw_props = discovery_info.properties or {}
+        props = decode_props(discovery_info.properties)
+        if ":" in host or not is_supported_devtype(props):
+            return self.async_abort(reason="not_supported_device")
 
-        # Normalise TXT properties to str→str, then pull the real public key
-        # from the `public` field (`curve` is just a numeric curve id).
-        props: dict[str, str] = {}
-        for k, v in raw_props.items():
-            key = k.decode("ascii", "replace") if isinstance(k, bytes) else str(k)
-            val = v.decode("utf-8", "replace") if isinstance(v, bytes) else (v or "")
-            props[key] = val
+        mac     = mac_from_props(props, discovery_info.name)
+        pubkey  = pubkey_from_props(props)
+        updates = {CONF_HOST: host, CONF_PORT: port}
+        if pubkey:
+            updates[CONF_PUBKEY] = pubkey
 
-        name = props.get("name") or "Ballu AC"
+        # A device we already know that shows up at a new IP (router swap) or
+        # with a new key (reboot): update its entry instead of offering it as new.
+        if mac:
+            await self.async_set_unique_id(mac)
+            self._abort_if_unique_id_configured(updates=updates)
+
+        # Entries that have not learned their MAC yet: the public key is unique
+        # per device boot, so a matching key identifies the device at any IP.
+        if pubkey:
+            for entry in self._async_current_entries(include_ignore=False):
+                if entry.data.get(CONF_MAC) or entry.data.get(CONF_PUBKEY) != pubkey:
+                    continue
+                moved = any(entry.data.get(k) != v for k, v in updates.items())
+                if mac:
+                    updates[CONF_MAC] = mac
+                async_update_connection(self.hass, entry, updates)
+                if moved and entry.state in (
+                    config_entries.ConfigEntryState.LOADED,
+                    config_entries.ConfigEntryState.SETUP_RETRY,
+                ):
+                    self.hass.config_entries.async_schedule_reload(entry.entry_id)
+                return self.async_abort(reason="already_configured")
+
+        if not mac:
+            await self.async_set_unique_id(f"{host}:{port}")
+            self._abort_if_unique_id_configured()
+        self._async_abort_entries_match({CONF_HOST: host, CONF_MAC: ""})
 
         self._host   = host
         self._port   = port
-        self._pubkey = _pubkey_from_props(props)
-        self._name   = name
-
-        await self.async_set_unique_id(f"{host}:{port}")
-        self._abort_if_unique_id_configured()
+        self._pubkey = pubkey
+        self._mac    = mac
+        self._name   = props.get("name") or "Ballu AC"
         self.context["title_placeholders"] = {"name": self._name, "host": host}
         return await self.async_step_zeroconf_confirm()
 
@@ -637,7 +611,7 @@ class BalluConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
             errors, placeholders = await self._validate_and_save(data)
             if not errors:
-                return self._create_entry(data)
+                return await self._async_create_entry(data, self._mac)
         return self.async_show_form(
             step_id="zeroconf_confirm",
             data_schema=vol.Schema({
@@ -739,16 +713,24 @@ class BalluConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return errors, placeholders
 
-    def _create_entry(self, data: dict):
+    async def _async_create_entry(self, data: dict, mac: str = ""):
+        host = str(data[CONF_HOST]).strip()
+        port = int(data.get(CONF_PORT, DEFAULT_PORT))
+        # The MAC is the stable identity (the IP changes with the router).
+        # Without it, key on the address until setup learns the MAC via mDNS.
+        await self.async_set_unique_id(mac or f"{host}:{port}", raise_on_progress=False)
+        self._abort_if_unique_id_configured()
+        self._async_abort_entries_match({CONF_HOST: host, CONF_MAC: ""})
         name = data.get(CONF_NAME, "Ballu AC") or "Ballu AC"
         return self.async_create_entry(
             title=name,
             data={
-                CONF_HOST:   str(data[CONF_HOST]).strip(),
-                CONF_PORT:   int(data.get(CONF_PORT, DEFAULT_PORT)),
+                CONF_HOST:   host,
+                CONF_PORT:   port,
                 CONF_TOKEN:  _norm_token(data[CONF_TOKEN]),
                 CONF_PUBKEY: _norm_pubkey(data[CONF_PUBKEY]),
                 CONF_NAME:   name,
+                CONF_MAC:    mac,
             },
         )
 
@@ -759,7 +741,12 @@ class BalluConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class BalluOptionsFlow(config_entries.OptionsFlow):
-    """Edit token/pubkey/name without removing the integration."""
+    """Edit the connection settings of an entry: address, token, key, name.
+
+    Changes are written to entry.data (which setup reads) and the entry is
+    reloaded. The address is normally tracked automatically by MAC via mDNS;
+    editing it here is the manual fallback when mDNS does not reach HA.
+    """
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._entry = config_entry
@@ -770,58 +757,81 @@ class BalluOptionsFlow(config_entries.OptionsFlow):
         d = self._entry.data
         if user_input is not None:
             try:
+                host   = str(user_input[CONF_HOST]).strip()
+                port   = int(user_input.get(CONF_PORT, d.get(CONF_PORT, DEFAULT_PORT)))
                 token  = _norm_token(user_input[CONF_TOKEN])
                 pubkey = _norm_pubkey(user_input[CONF_PUBKEY])
-            except ValueError as exc:
+                if not host or not 1 <= port <= 65535:
+                    raise ValueError("invalid host or port")
+            except (KeyError, TypeError, ValueError) as exc:
                 errors["base"] = "invalid_input"
                 placeholders["error_detail"] = str(exc)
             else:
-                # Verify the new credentials actually work before saving, so a
-                # wrong token can't be stored and silently break the device.
-                ok, detail = await self._async_verify(d[CONF_HOST], d[CONF_PORT],
-                                                      token, pubkey)
+                # Verify the new settings actually work before saving, so a wrong
+                # token or address can't be stored and silently break the device.
+                ok, detail, pubkey = await self._async_verify(host, port, token, pubkey)
                 if not ok:
                     errors["base"] = "invalid_credentials"
                     placeholders["error_detail"] = detail
                 else:
-                    return self.async_create_entry(
-                        title=user_input.get(CONF_NAME, d.get(CONF_NAME, "Ballu AC")),
-                        data={
-                            CONF_HOST:   d[CONF_HOST],
-                            CONF_PORT:   d[CONF_PORT],
-                            CONF_TOKEN:  token,
-                            CONF_PUBKEY: pubkey,
-                            CONF_NAME:   user_input.get(CONF_NAME, d.get(CONF_NAME, "")),
-                        },
+                    name = user_input.get(CONF_NAME) or self._entry.title
+                    self.hass.config_entries.async_update_entry(
+                        self._entry,
+                        title=name,
+                        data={**d, CONF_HOST: host, CONF_PORT: port, CONF_TOKEN: token,
+                              CONF_PUBKEY: pubkey, CONF_NAME: name},
                     )
+                    self.hass.config_entries.async_schedule_reload(self._entry.entry_id)
+                    return self.async_create_entry(title="", data={})
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
-                vol.Optional(CONF_NAME,   default=d.get(CONF_NAME, "Ballu AC")): str,
-                vol.Required(CONF_TOKEN,  default=d.get(CONF_TOKEN, "")):        str,
-                vol.Required(CONF_PUBKEY, default=d.get(CONF_PUBKEY, "")):       str,
+                vol.Optional(CONF_NAME,   default=self._entry.title):              str,
+                vol.Required(CONF_HOST,   default=d.get(CONF_HOST, "")):           str,
+                vol.Optional(CONF_PORT,   default=d.get(CONF_PORT, DEFAULT_PORT)): int,
+                vol.Required(CONF_TOKEN,  default=d.get(CONF_TOKEN, "")):          str,
+                vol.Required(CONF_PUBKEY, default=d.get(CONF_PUBKEY, "")):         str,
             }),
             errors=errors,
             description_placeholders=placeholders,
         )
 
     async def _async_verify(self, host: str, port: int, token: str,
-                            pubkey: str) -> tuple[bool, str]:
-        """Connect and confirm the device accepts a command. (ok, detail)."""
+                            pubkey: str) -> tuple[bool, str, str]:
+        """Connect and confirm the device accepts a command → (ok, detail, pubkey).
+
+        On a handshake timeout the key may have rotated: retry once with the key
+        the device currently announces at that address.
+        """
         from .syncleo import SyncleoClient  # lazy import
-        try:
-            client = SyncleoClient(host=host, port=port, token_hex=token, pubkey_hex=pubkey)
+
+        async def attempt(pk: str) -> bool:
+            client = SyncleoClient(host=host, port=port, token_hex=token, pubkey_hex=pk)
             await client.connect()
             try:
-                authed = await client.async_verify_auth()
+                return await client.async_verify_auth()
             finally:
                 await client.disconnect()
+
+        try:
+            try:
+                authed = await attempt(pubkey)
+            except TimeoutError:
+                fresh = next(
+                    (dev["pubkey"] for dev in await async_scan(self.hass, DISCOVERY_TIMEOUT)
+                     if dev["host"] == host and dev["pubkey"]),
+                    "",
+                )
+                if not fresh or fresh == pubkey:
+                    raise
+                pubkey = fresh
+                authed = await attempt(pubkey)
         except TimeoutError:
-            return False, ("Нет ответа от устройства — проверьте, что оно в сети, "
-                           "и правильность публичного ключа.")
+            return False, ("Нет ответа от устройства по этому адресу — проверьте IP "
+                           "и что кондиционер в сети."), pubkey
         except Exception as exc:  # noqa: BLE001
-            return False, f"Ошибка подключения: {type(exc).__name__}: {exc}"
+            return False, f"Ошибка подключения: {type(exc).__name__}: {exc}", pubkey
         if not authed:
             return False, ("Устройство подключилось, но не приняло команду — "
-                           "скорее всего неверный токен.")
-        return True, ""
+                           "скорее всего неверный токен."), pubkey
+        return True, "", pubkey

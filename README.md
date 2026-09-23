@@ -26,6 +26,9 @@ reverse-engineered syncleo protocol (X25519 + AES-CBC over UDP).
 - 🔍 **Auto-discovery** of devices on the network (mDNS) when adding.
 - 🔑 **Self-healing key**: the device's public key changes on reboot — the
   integration re-resolves it from mDNS and reconnects automatically.
+- 🔁 **Survives IP changes**: the AC is recognised by its MAC address, so a new
+  Wi-Fi router or DHCP lease doesn't break it — the integration finds it at the new
+  address, and entities, history and automations stay intact.
 
 ## Supported devices
 
@@ -149,13 +152,19 @@ logger:
   refreshed automatically if the device rebooted.
 - **"Invalid credentials" when adding** — the token is wrong; re-copy it from the
   Ballu Home app QR code.
+- **Changing the Wi-Fi router** — after updating to v0.4.0, restart Home Assistant
+  once *while the ACs still use the old router*, so each one learns its MAC address;
+  from then on new IPs are picked up automatically. If mDNS can't reach Home
+  Assistant (VLANs, multicast blocked), set the new IP in the device's **Configure**
+  dialog — IP, port, token and key can all be edited there without re-adding it.
 
 ## Security notes
 
 - **The token is your device password.** It's stored in Home Assistant's config
   and sent (encrypted) to the device. Anyone with your token can control that AC.
-- **mDNS discovery trusts the local network.** Discovery and automatic public-key
-  refresh take the device address and public key from mDNS announcements. A
+- **mDNS discovery trusts the local network.** Discovery, automatic public-key
+  refresh and IP tracking take the device address and public key from mDNS
+  announcements (a known device is matched by its MAC). A
   malicious host on the *same LAN* could spoof a syncleo announcement and trick
   the integration into handshaking with it, potentially capturing the token.
   Only add/refresh devices on a network you trust; on segmented networks keep IoT

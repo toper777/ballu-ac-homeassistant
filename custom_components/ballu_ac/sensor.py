@@ -11,7 +11,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import DOMAIN, ballu_device_info
+from . import DOMAIN, ballu_device_info, entity_unique_id
 from .syncleo import SyncleoClient, ACState
 
 
@@ -21,7 +21,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     client: SyncleoClient = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([BalluRoomTempSensor(client, entry.title)])
+    async_add_entities([BalluRoomTempSensor(client, entry)])
 
 
 class BalluRoomTempSensor(SensorEntity):
@@ -34,10 +34,10 @@ class BalluRoomTempSensor(SensorEntity):
     _attr_name                = "Room Temperature"
     _attr_icon                = "mdi:thermometer"
 
-    def __init__(self, client: SyncleoClient, device_name: str) -> None:
+    def __init__(self, client: SyncleoClient, entry: ConfigEntry) -> None:
         self._client = client
-        self._attr_unique_id = f'ballu_{client.host.replace(".", "_")}_room_temp'
-        self._attr_device_info = ballu_device_info(client, device_name)
+        self._attr_unique_id = entity_unique_id(entry, "room_temp")
+        self._attr_device_info = ballu_device_info(entry, client, entry.title)
         client.register_state_callback(self._on_state_change)
 
     @property

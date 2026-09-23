@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import DOMAIN, ballu_device_info
+from . import DOMAIN, ballu_device_info, entity_unique_id
 from .syncleo import SyncleoClient, ACState
 
 _LOGGER = logging.getLogger(__name__)
@@ -21,11 +21,10 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     client: SyncleoClient = hass.data[DOMAIN][entry.entry_id]
-    name = entry.title
     async_add_entities([
-        BalluSwitch(client, name, "ionizer",  "Ionizer",  "mdi:air-filter",
+        BalluSwitch(client, entry, "ionizer",  "Ionizer",  "mdi:air-filter",
                     lambda s: s.ionizer, client.set_ionizer),
-        BalluSwitch(client, name, "display",  "Display",  "mdi:monitor",
+        BalluSwitch(client, entry, "display",  "Display",  "mdi:monitor",
                     lambda s: s.display, client.set_display),
     ])
 
@@ -38,7 +37,7 @@ class BalluSwitch(SwitchEntity):
     def __init__(
         self,
         client: SyncleoClient,
-        device_name: str,
+        entry: ConfigEntry,
         key: str,
         name: str,
         icon: str,
@@ -50,8 +49,8 @@ class BalluSwitch(SwitchEntity):
         self._set_state = set_state
         self._attr_name        = name
         self._attr_icon        = icon
-        self._attr_unique_id   = f'ballu_{client.host.replace(".", "_")}_{key}'
-        self._attr_device_info = ballu_device_info(client, device_name)
+        self._attr_unique_id   = entity_unique_id(entry, key)
+        self._attr_device_info = ballu_device_info(entry, client, entry.title)
         client.register_state_callback(self._on_state_change)
 
     @property

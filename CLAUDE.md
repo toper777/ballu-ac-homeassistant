@@ -18,8 +18,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Команды разработки
 
-В проекте **нет** системы сборки, тестов, линтера, `requirements.txt` или `pyproject.toml`.
-Это чистый custom-component для Home Assistant + автономные Python-скрипты в `tools/`.
+Системы сборки и линтера нет. Это custom-component для Home Assistant + автономные
+Python-скрипты в `tools/` + тесты в `tests/` (`pytest-homeassistant-custom-component`).
 
 ### Зависимости
 
@@ -49,7 +49,22 @@ Ballu Home). **Публичный ключ НЕ хардкодится**: `DEVIC
 
 ### Проверка изменений в интеграции
 
-Автотестов нет. Цикл проверки — ручной, на реальном HA:
+**Автотесты** (`tests/`, фейковая сеть вместо UDP/mDNS) — `pytest-homeassistant-custom-component`
+тянет HA, чья зависимость `lru-dict` на Windows требует MSVC, поэтому гонять их удобно в Docker
+(`MSYS_NO_PATHCONV=1` нужен в Git Bash, иначе он искажает пути `/src`):
+
+```bash
+docker run -d --name ballu-hatest -v "D:/dev/Ballu_AC_homeassistant:/src" -w /src python:3.13 sleep infinity
+docker exec ballu-hatest pip install -q pytest-homeassistant-custom-component   # один раз
+docker start ballu-hatest                                                       # в следующие разы
+docker exec ballu-hatest python -m pytest -q                                     # все тесты
+docker exec ballu-hatest python -m pytest -q tests/test_ip_change.py -k router   # один тест
+```
+
+Фейковый клиент в `tests/conftest.py` воспроизводит ключевое поведение устройства: handshake
+требует текущий pubkey устройства, но НЕ проверяет токен — токен проверяется только на командах.
+
+Итоговая проверка — ручная, на реальном HA:
 1. Скопировать `custom_components/ballu_ac/` в `<config>/custom_components/`
 2. **Полный перезапуск** HA (reload интеграции недостаточно — особенно после правки переводов)
 3. Настройки → Устройства и службы → Ballu AC
@@ -64,13 +79,14 @@ Ballu Home). **Публичный ключ НЕ хардкодится**: `DEVIC
 ```
 Ballu_AC_homeassistant/
 ├── CLAUDE.md                          # этот файл
+├── tests/                             # pytest-homeassistant-custom-component (фейковая сеть)
 ├── custom_components/
 │   └── ballu_ac/                      # HA интеграция
 │       ├── __init__.py                # setup_entry / unload_entry
 │       ├── climate.py                 # ClimateEntity (режимы, темп, вентилятор, свинг, пресеты)
 │       ├── config_flow.py             # UI настройки: ручная / QR / zeroconf
-│       ├── const.py                   # DOMAIN, CONF_PUBKEY, DEFAULT_PORT
-│       ├── discovery.py               # mDNS-резолв актуального pubkey по host (самолечение ключа)
+│       ├── const.py                   # DOMAIN, CONF_*, DEFAULT_PORT
+│       ├── discovery.py               # mDNS-скан, MAC/pubkey из TXT, фильтр devtype (поиск устройства)
 │       ├── manifest.json              # зависимости, zeroconf, версия
 │       ├── sensor.py                  # SensorEntity (температура в комнате)
 │       ├── strings.json               # строки UI (источник для переводов)
@@ -108,10 +124,35 @@ Ballu_AC_homeassistant/
    устройство генерирует новую X25519-пару → меняется `public=` в mDNS. Старый сохранённый
    pubkey → неверный ECDH-секрет → handshake молча отвергается (те же симптомы, что и при
    padding-баге: 0 ответов, хотя устройство живо и управляется из родного приложения).
-   Поэтому интеграция **сама обновляет ключ из mDNS** (`discovery.py` →
-   `async_pubkey_for_host`): при сбое handshake в `async_setup_entry` ключ пере-резолвится,
-   запись обновляется, подключение повторяется. Рантайм-потеря связи (≥3 неотвеченных
-   keepalive) → `on_connection_lost` → `async_reload` записи → тот же путь самовосстановления.
+   Поэтому интеграция **сама находит устройство заново** — см. «Идентичность устройства».
+8. **IP-адрес тоже НЕ постоянен** (смена Wi-Fi-роутера / DHCP). Единственный стабильный
+   идентификатор — **MAC** (TXT `macaddr=aa:bb:cc:dd:ee:01`, он же имя сервиса `aabbccddee01`).
+
+### Идентичность устройства (IP и ключ меняются, MAC — нет)
+
+- `entry.unique_id` = MAC. Пока MAC не известен (старые записи, ручное добавление) —
+  `host:port`; после первого успешного подключения фоновая задача `_async_learn_mac` находит MAC
+  в mDNS по **совпадению pubkey** (ключ уникален в пределах загрузки устройства) и переводит
+  `unique_id` на MAC.
+- `entry.data[uid_base]` / `entry.data[device_key]` — **заморожены** при создании/миграции и больше
+  НИКОГДА не вычисляются из текущего IP: unique_id сущностей = `ballu_{uid_base}_{key}`,
+  идентификатор устройства = `(DOMAIN, device_key)`. Новые записи: MAC (или `entry_id`, если MAC
+  неизвестен). Мигрированные v1: старые значения из IP (`192_168_1_10` / `192.168.1.10:41122`),
+  чтобы entity_id, история и автоматизации не пострадали. Не «чинить» их в MAC — это сломает сущности.
+- **Миграция v1 → v2** (`async_migrate_entry`): только замораживает старые ID, без сети.
+- **Переподключение** (`_async_connect` в `__init__.py`): сначала последний известный адрес/ключ;
+  при таймауте — `discovery.async_scan` и поиск устройства:
+  - MAC известен → только устройство с этим MAC (по IP — никогда);
+  - MAC неизвестен → устройство с тем же pubkey (переехало без перезагрузки), затем устройство
+    по старому IP, но **только если оно ACK-нуло команду с нашим токеном** (`async_verify_auth`).
+  Причина строгости: после смены роутера старый IP может достаться ДРУГОМУ кондиционеру, а
+  handshake проходит с чужим токеном — наивный поиск по IP привязал бы запись к соседу.
+  Найдено → `async_update_connection` сохраняет host/port/pubkey (+MAC). Не найдено →
+  `ConfigEntryNotReady` (HA повторяет с backoff). Рантайм-потеря связи (≥3 неотвеченных
+  keepalive) → `on_connection_lost` → `async_reload` → тот же путь.
+- **Пассивный zeroconf** обновляет адрес известного устройства: `async_set_unique_id(mac)` +
+  `_abort_if_unique_id_configured(updates={host, port, pubkey})` → HA сам перезагружает запись.
+  Записи без MAC узнаются по совпадению pubkey.
 
 ### Структура фрейма
 
@@ -248,7 +289,8 @@ DEVICE → CLIENT:  CMD cmd=0x00 [proto_u16][fw_maj][fw_min][mode][token...]
     поля `devtype` НЕ отсекаются (лучше показать, чем спрятать).
   - Найденные устройства → `SelectSelector` со списком + пункт «Ввести вручную…»
     (`MANUAL_CHOICE`). Устройства без валидного `public=` помечаются «⚠ без ключа».
-    Извлечение ключа — общий хелпер `_pubkey_from_props()` (поле `public`, 64 hex).
+    Извлечение ключа/MAC — общие хелперы `pubkey_from_props()` / `mac_from_props()` в
+    `discovery.py`. Уже настроенные устройства (по MAC, или по IP для записей без MAC) скрыты.
   - После выбора → `async_step_discovery_token`: host/port/pubkey уже известны, осталось
     указать **token** (mDNS его НЕ анонсирует). Можно вставить QR (текст/URL) ИЛИ ввести
     token вручную; ручной ввод имеет приоритет. Затем `_validate_and_save` → подключение.
@@ -257,29 +299,33 @@ DEVICE → CLIENT:  CMD cmd=0x00 [proto_u16][fw_maj][fw_min][mode][token...]
 - **QR-код** (`async_step_qr`): текст QR (JSON/URL/base64/32-char hex) или URL изображения QR
   - URL изображения: скачивается и декодируется через `zxingcpp` или `pyzbar` (опционально)
 - **zeroconf** (`async_step_zeroconf`): ПАССИВНОЕ автообнаружение — срабатывает, когда HA сам
-  наткнётся на анонс `_syncleo._udp.local.` (не путать с активным `discovery` выше),
-  pubkey берётся из TXT `public=` (через `_pubkey_from_props`)
+  наткнётся на анонс `_syncleo._udp.local.` (не путать с активным `discovery` выше).
+  Для известного устройства не предлагает «добавить», а обновляет его IP/ключ (см.
+  «Идентичность устройства»). Не-кондиционеры (`devtype≠20`) и IPv6 → abort `not_supported_device`.
 - При ошибке: поля сохраняются, детализированное сообщение об ошибке
 - **Проверка авторизации**: `connect()` (handshake) проходит даже с НЕВЕРНЫМ токеном —
   устройство отвергает только команды. Поэтому `_validate_and_save` после `connect()`
   вызывает `client.async_verify_auth()` (шлёт keepalive cmd=0xff, ждёт ACK); нет ACK →
   ошибка `invalid_credentials`, запись НЕ создаётся. Аналогично в `BalluOptionsFlow._async_verify`.
-- **OptionsFlow**: редактирование token/pubkey/name без удаления интеграции (с той же проверкой)
+- **OptionsFlow** («Настроить»): правка IP/порта/token/pubkey/имени с той же проверкой. Пишет в
+  `entry.data` (setup читает именно его; `async_create_entry(data=…)` в options-flow пишет в
+  `entry.options`, которые интеграция не читает — это был баг до v0.4.0) и перезагружает запись.
+  Ручная правка IP — запасной путь, когда mDNS не доходит до HA.
 
 ### Важные технические детали
 
 - `const.py` — только константы, никаких тяжёлых импортов (иначе HA/Python 3.14 детектирует blocking import)
 - `from .syncleo import SyncleoClient` — ТОЛЬКО внутри методов, не на уровне модуля
 - `from homeassistant.components.zeroconf import ZeroconfServiceInfo` — только под `TYPE_CHECKING`
-- Unique ID **config entry**: `f"{host}:{port}"` (в `config_flow.py`) — предотвращает дублирование устройств
-- Unique ID **сущностей** другой: каждая платформа строит свой, напр. climate —
-  `f'ballu_{host_с_подчёркиваниями}_climate'`. Не путать с unique ID записи.
+- Unique ID записи и сущностей/устройства — см. «Идентичность устройства»; хелпер
+  `entity_unique_id(entry, key)` в `__init__.py`. Никогда не строить ID из `client.host`.
 - `available` сущностей завязан на внутренний флаг `client._connected` (выставляется по ACK)
 - Состояние устройства — push-модель: `SyncleoClient` хранит единый `ACState`, сущности
   читают его через свойства и подписываются через `register_state_callback`; колбэк дёргает
   `schedule_update_ha_state()`. Команды НЕ обновляют локальный стейт оптимистично — ждут push.
-- **DeviceInfo**: общий хелпер `ballu_device_info(client, name)` в `__init__.py` группирует все
-  сущности под одним HA-устройством (identifiers `(DOMAIN, "host:port")`). `sw_version` берётся
+- **DeviceInfo**: общий хелпер `ballu_device_info(entry, client, name)` в `__init__.py` группирует
+  все сущности под одним HA-устройством (identifiers `(DOMAIN, device_key)`, плюс
+  `connections` с MAC, если он известен). `sw_version` берётся
   из `client.fw_version`, которое `_parse_handshake` извлекает из cmd=0x00 во время `connect()`
   (до setup платформ, поэтому версия уже доступна). Climate — primary entity (`_attr_name=None`).
 - Переводы: нужны оба файла `translations/en.json` и `translations/ru.json`

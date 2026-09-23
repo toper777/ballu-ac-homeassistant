@@ -6,3 +6,7 @@ dependencies = [
     "cryptography>=48.0.1",
     "zeroconf>=0.149.16",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

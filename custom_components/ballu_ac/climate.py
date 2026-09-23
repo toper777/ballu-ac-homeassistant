@@ -19,7 +19,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import DOMAIN, ballu_device_info
+from . import DOMAIN, ballu_device_info, entity_unique_id
 from .syncleo import SyncleoClient, ACState
 
 _LOGGER = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     client: SyncleoClient = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([BalluClimate(client, entry.title)])
+    async_add_entities([BalluClimate(client, entry)])
 
 
 class BalluClimate(ClimateEntity):
@@ -100,11 +100,11 @@ class BalluClimate(ClimateEntity):
     _attr_swing_modes  = [SWING_OFF, SWING_VERTICAL, SWING_HORIZONTAL, SWING_BOTH]
     _attr_preset_modes = ALL_PRESETS
 
-    def __init__(self, client: SyncleoClient, name: str) -> None:
+    def __init__(self, client: SyncleoClient, entry: ConfigEntry) -> None:
         self._client = client
         self._attr_name = None  # primary entity takes the device name
-        self._attr_unique_id = f'ballu_{client.host.replace(".", "_")}_climate'
-        self._attr_device_info = ballu_device_info(client, name)
+        self._attr_unique_id = entity_unique_id(entry, "climate")
+        self._attr_device_info = ballu_device_info(entry, client, entry.title)
         self._last_mode: str = 'cool'
         client.register_state_callback(self._on_state_change)
 
