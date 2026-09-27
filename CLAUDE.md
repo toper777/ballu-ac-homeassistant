@@ -51,10 +51,14 @@ Ballu Home). **Публичный ключ НЕ хардкодится**: `DEVIC
 
 **Автотесты** (`tests/`, фейковая сеть вместо UDP/mDNS) — `pytest-homeassistant-custom-component`
 тянет HA, чья зависимость `lru-dict` на Windows требует MSVC, поэтому гонять их удобно в Docker
-(`MSYS_NO_PATHCONV=1` нужен в Git Bash, иначе он искажает пути `/src`):
+(`MSYS_NO_PATHCONV=1` нужен в Git Bash, иначе он искажает пути `/src`). Проект с 27.09.2026 лежит
+на Яндекс Диске (`~/Yandex.Disk/Claude Projects/Ballu_AC_homeassistant`), поэтому `docker run` выполняй
+из папки проекта. Контейнер, созданный раньше со старым путём `D:/dev/...`, пересоздай (`docker rm -f ballu-hatest`).
+`.venv` в папке проекта не держим: Яндекс Диск унёс бы его на другие ПК, где он не работает. Если нужен
+локальный venv, создавай его вне Яндекс Диска (`UV_PROJECT_ENVIRONMENT`).
 
 ```bash
-docker run -d --name ballu-hatest -v "D:/dev/Ballu_AC_homeassistant:/src" -w /src python:3.13 sleep infinity
+docker run -d --name ballu-hatest -v "$(cygpath -m "$PWD"):/src" -w /src python:3.13 sleep infinity
 docker exec ballu-hatest pip install -q pytest-homeassistant-custom-component   # один раз
 docker start ballu-hatest                                                       # в следующие разы
 docker exec ballu-hatest python -m pytest -q                                     # все тесты
