@@ -29,6 +29,7 @@ import logging
 import socket
 import struct
 import time
+from collections import deque
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -236,6 +237,12 @@ class SyncleoClient:
     PING_INTERVAL        = 10.0  # keepalive interval, seconds
     HANDSHAKE_TIMEOUT    = 5.0
     KEEPALIVE_MISS_LIMIT = 3     # consecutive unanswered pings → connection lost
+    # Incoming seq is a single byte: the device sends its own keepalive (cmd=0xff) every
+    # ~5 s, so seq wraps 255 → 0 roughly every 21–24 min. Retransmissions of one frame
+    # arrive back-to-back (every ~0.3 s), so duplicates are only looked for among the
+    # last few seqs — a set of every seq ever seen would treat the wrapped seq=0 as a
+    # duplicate and never ACK it again.
+    RX_DEDUP_WINDOW      = 32
 
     def __init__(self, host: str, port: int, token_hex: str, pubkey_hex: str):
         self.host       = host
@@ -254,7 +261,7 @@ class SyncleoClient:
         self._ink:     bytes = b''   # encinkey
         self._outk:    bytes = b''   # encoutkey
         self._outseq   = 0
-        self._acked:   set[int] = set()
+        self._rx_recent: deque[int] = deque(maxlen=self.RX_DEDUP_WINDOW)
         self._pending: set[int] = set()
         self._connected = False
         self._hs_done   = False
@@ -473,10 +480,16 @@ class SyncleoClient:
             _diag("  → ignored (ftype=%s)", ftype)
             return
 
-        if seq not in self._acked:
-            self._send_raw(build_ack(seq, self._ink, self._outk))
-            self._acked.add(seq)
-            _diag("  → sent ACK for incoming seq=%d", seq)
+        # ACK every incoming CMD, retransmissions included: the device repeats a frame until
+        # it is ACKed, and after ~15 unanswered repeats (~4 s) it drops the session and stops
+        # answering our pings. Before 0.4.1 a never-pruned set of seen seqs left the wrapped
+        # seq=0 unACKed, so every unit "lost" the connection once per seq wrap (~24 min).
+        self._send_raw(build_ack(seq, self._ink, self._outk))
+        if seq in self._rx_recent:
+            _diag("  → duplicate seq=%d (retransmission): ACKed again, ignored", seq)
+            return
+        self._rx_recent.append(seq)
+        _diag("  → sent ACK for incoming seq=%d", seq)
 
         if cmd_type == 0x00:
             self._parse_handshake(payload)

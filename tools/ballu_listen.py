@@ -316,7 +316,6 @@ def main():
     print()
     sock.sendto(hs, (DEVICE_IP, DEVICE_PORT))
 
-    acked    = set()
     state    = {}   # cmd_type → data
     outseq   = 0
     hs_done  = False
@@ -348,10 +347,9 @@ def main():
                     print(f'[{ts}] seq={seq} {ft}: {payload}')
                     continue
 
-                # ACK it
-                if seq not in acked:
-                    sock.sendto(build_ack(seq, ink, outk), (DEVICE_IP, DEVICE_PORT))
-                    acked.add(seq)
+                # ACK every CMD, retransmissions included: seq is one byte and wraps every
+                # 256 frames (~24 min); an unACKed frame makes the device drop the session.
+                sock.sendto(build_ack(seq, ink, outk), (DEVICE_IP, DEVICE_PORT))
 
                 if cmd_type == 0x00:
                     if not hs_done:

@@ -309,7 +309,6 @@ class BallClient:
         hs = build_handshake(self.our_pub, self.encinkey, self.encoutkey, self.token)
         log('[*] Connecting...')
         self._send(hs)
-        acked = set()
         last_ping = time.time()
 
         try:
@@ -338,10 +337,10 @@ class BallClient:
                         elif ftype == 'CMD' and isinstance(payload, tuple):
                             cmd_type, cmd_data = payload
 
-                            # ACK every CMD exactly once
-                            if seq not in acked:
-                                self._send(build_ack(seq, self.encinkey, self.encoutkey))
-                                acked.add(seq)
+                            # ACK every CMD, retransmissions included: seq is one byte and
+                            # wraps every 256 frames (~24 min); an unACKed frame makes the
+                            # device drop the session after ~15 repeats.
+                            self._send(build_ack(seq, self.encinkey, self.encoutkey))
 
                             if cmd_type == 0x00:
                                 # HandshakeResponse
@@ -364,10 +363,9 @@ class BallClient:
                                 else:
                                     marker = None  # unchanged, skip
 
-                                if marker or seq not in acked - {seq}:
-                                    if prev is None or prev != cmd_data:
-                                        log(f'[{ts}] seq={seq} {marker or ""} {info}')
-                                        self._state[cmd_type] = cmd_data
+                                if marker:
+                                    log(f'[{ts}] seq={seq} {marker} {info}')
+                                    self._state[cmd_type] = cmd_data
 
                         elif ftype not in ('ACK',):
                             log(f'[{ts}] seq={seq} {ftype}: {payload}')
