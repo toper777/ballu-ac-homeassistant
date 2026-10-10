@@ -24,7 +24,7 @@ Python-скрипты в `tools/` + тесты в `tests/` (`pytest-homeassistan
 ### Зависимости
 
 ```bash
-pip install cryptography      # обязательна (X25519, AES-CBC) — заявлена в manifest.json
+pip install cryptography      # обязательна (X25519, AES-CBC); в HA уже есть — в manifest.json НЕ указывать (hassfest с 10.2026 запрещает зависимости ядра)
 pip install zeroconf          # для mDNS-обнаружения (scan) и zeroconf config flow
 pip install zxingcpp          # ОПЦИОНАЛЬНО — декодирование QR из изображения
 ```
