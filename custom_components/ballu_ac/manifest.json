@@ -1,6 +1,9 @@
 {
   "domain": "ballu_ac",
   "name": "Ballu AC (syncleo)",
+  "categories": [
+    "climate.heat_pumps_air_conditioning"
+  ],
   "codeowners": [
     "@toper777"
   ],
