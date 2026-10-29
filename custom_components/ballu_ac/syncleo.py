@@ -179,6 +179,7 @@ class ACState:
 
     MODES = {0: 'off', 1: 'auto', 2: 'cool', 3: 'dry', 4: 'heat', 5: 'fan_only'}
     FANS  = {0: 'auto', 1: 'low', 2: 'medium', 3: 'high'}
+    TEMP_MIN, TEMP_MAX = 16, 30
 
     @property
     def is_on(self) -> bool:
@@ -192,12 +193,17 @@ class ACState:
 
         if cmd_type == 0x01 and data:
             self.mode = self.MODES.get(data[0], f'?{data[0]}')
+        # Roughly the first minute after the unit comes back online (power-up,
+        # Wi-Fi reconnect) it pushes set_temp=0 and room_temp=0 until the main
+        # board reports real values. Ignore them so HA shows "unknown", not 0 °C.
         elif cmd_type == 0x02 and data:
-            self.set_temp = data[0]
+            if self.TEMP_MIN <= data[0] <= self.TEMP_MAX:
+                self.set_temp = data[0]
         elif cmd_type == 0x0f and data:
             self.fan = self.FANS.get(data[0], f'?{data[0]}')
         elif cmd_type == 0x14 and data:
-            self.room_temp = data[0]
+            if data[0] != 0:
+                self.room_temp = data[0]
         elif cmd_type == 0x18 and data:
             self.ionizer = bool(data[0])
         elif cmd_type == 0x1c and data:
