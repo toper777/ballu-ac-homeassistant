@@ -32,8 +32,14 @@
 
 ## Поддерживаемые устройства
 
-- **Ballu Platinum Evolution** (и другие модели с модулем syncleo, `devtype=20`).
+| `devtype` | Модели | Проверено на |
+|-----------|--------|--------------|
+| `20` | Ballu Platinum Evolution, Olympio Legend, Electrolux Onix Black Super DC | Ballu Platinum Evolution, Electrolux Onix Black Super DC |
+| `13` | Electrolux Smartline, Ballu Eco Smart, Ballu Ice Peak | Electrolux Smartline |
+
 - Прошивка `fw=1.22`, `protocol=3`, порт UDP `41122`.
+- `devtype=13` использует тот же набор команд, что и `20`. Особенность: в выключенном
+  состоянии он игнорирует смену скорости вентилятора (так же ведут себя приложение и облако Hommyn).
 
 Другие устройства RusClimate/Polaris на syncleo с иным `devtype` не поддерживаются
 (команды отличаются) и скрываются при обнаружении.

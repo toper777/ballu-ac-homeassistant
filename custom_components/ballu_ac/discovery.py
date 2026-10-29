@@ -18,7 +18,10 @@ SYNCLEO_SERVICE = "_syncleo._udp.local."
 # Only these syncleo device types are air conditioners we support. Other
 # syncleo gear (e.g. Polaris humidifiers, devtype=77) shares the same mDNS
 # service but speaks a different command set.
-SUPPORTED_DEVTYPES = {"20"}
+#   20 — Ballu Platinum Evolution / Olympio Legend / Electrolux Onix Black Super DC
+#   13 — Electrolux Smartline / Ballu Eco Smart / Ballu Ice Peak (same AC command
+#        set as 20: verified on Electrolux Smartline, fw 1.22, protocol 3)
+SUPPORTED_DEVTYPES = {"13", "20"}
 
 
 def decode_props(raw: dict) -> dict[str, str]:

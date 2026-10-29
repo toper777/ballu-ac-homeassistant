@@ -32,8 +32,14 @@ reverse-engineered syncleo protocol (X25519 + AES-CBC over UDP).
 
 ## Supported devices
 
-- **Ballu Platinum Evolution** (and other models with a syncleo module, `devtype=20`).
+| `devtype` | Models | Tested on |
+|-----------|--------|-----------|
+| `20` | Ballu Platinum Evolution, Olympio Legend, Electrolux Onix Black Super DC | Ballu Platinum Evolution, Electrolux Onix Black Super DC |
+| `13` | Electrolux Smartline, Ballu Eco Smart, Ballu Ice Peak | Electrolux Smartline |
+
 - Firmware `fw=1.22`, `protocol=3`, UDP port `41122`.
+- `devtype=13` uses the same command set as `20`. Note: with the AC switched off it
+  ignores fan-speed changes (the Hommyn app/cloud behaves the same way).
 
 Other RusClimate/Polaris syncleo devices with a different `devtype` are not
 supported (their command set differs) and are hidden during discovery.

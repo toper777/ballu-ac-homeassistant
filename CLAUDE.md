@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Полная реализация интеграции кондиционеров Ballu (серия Platinum Evolution и другие с прошивкой syncleo) для Home Assistant, основанная на реверс-инжиниринге UDP-протокола syncleo.
 
 - **Модель устройства:** ballu_platinum_evolution
-- **Прошивка:** fw=1.22, devtype=20, protocol=3
+- **Прошивка:** fw=1.22, devtype=20 (также devtype=13 — тот же набор команд, проверено на Electrolux Smartline), protocol=3
 - **Протокол:** UDP, порт 41122, шифрование X25519+AES-CBC
 - **Токен** берётся из приложения Ballu Home (Поделиться → QR), **публичный ключ** — из mDNS
   (TXT `public=`). В репозитории НЕ хранятся; для `tools/` задаются локально (см. ниже).
@@ -300,7 +300,7 @@ DEVICE → CLIENT:  CMD cmd=0x00 [proto_u16][fw_maj][fw_min][mode][token...]
     `Zeroconf()` внутри HA ЗАПРЕЩЕНО (в отличие от `tools/ballu_listen.py`).
   - `AsyncServiceBrowser` слушает `_syncleo._udp.local.` `DISCOVERY_TIMEOUT` (5 с), затем
     `AsyncServiceInfo.async_request` добирает host/port/TXT по каждому имени.
-  - Фильтр по TXT `devtype`: показываются только кондиционеры (`SUPPORTED_DEVTYPES={"20"}`).
+  - Фильтр по TXT `devtype`: показываются только кондиционеры (`SUPPORTED_DEVTYPES={"13","20"}`).
     Прочие syncleo-устройства (напр. Polaris `devtype=77`) скрываются. Устройства без
     поля `devtype` НЕ отсекаются (лучше показать, чем спрятать).
   - Найденные устройства → `SelectSelector` со списком + пункт «Ввести вручную…»
@@ -317,7 +317,7 @@ DEVICE → CLIENT:  CMD cmd=0x00 [proto_u16][fw_maj][fw_min][mode][token...]
 - **zeroconf** (`async_step_zeroconf`): ПАССИВНОЕ автообнаружение — срабатывает, когда HA сам
   наткнётся на анонс `_syncleo._udp.local.` (не путать с активным `discovery` выше).
   Для известного устройства не предлагает «добавить», а обновляет его IP/ключ (см.
-  «Идентичность устройства»). Не-кондиционеры (`devtype≠20`) и IPv6 → abort `not_supported_device`.
+  «Идентичность устройства»). Не-кондиционеры (devtype не из `SUPPORTED_DEVTYPES`) и IPv6 → abort `not_supported_device`.
 - При ошибке: поля сохраняются, детализированное сообщение об ошибке
 - **Проверка авторизации**: `connect()` (handshake) проходит даже с НЕВЕРНЫМ токеном —
   устройство отвергает только команды. Поэтому `_validate_and_save` после `connect()`

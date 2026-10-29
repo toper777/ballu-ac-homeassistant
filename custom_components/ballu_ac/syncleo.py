@@ -1,5 +1,5 @@
 """
-syncleo UDP protocol client for Ballu AC (devtype=20, protocol=3).
+syncleo UDP protocol client for Ballu AC (devtype=13/20, protocol=3).
 
 Fully reverse-engineered on fw=1.22, model=ballu_platinum_evolution.
 
