@@ -12,7 +12,7 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/toper777/ballu-ac-homeassistant/issues",
   "requirements": [],
-  "version": "0.4.1",
+  "version": "0.5.0",
   "zeroconf": [
     {
       "type": "_syncleo._udp.local."

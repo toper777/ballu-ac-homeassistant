@@ -164,27 +164,22 @@ class BalluClimate(ClimateEntity):
         await self._client.set_swing(v, h)
 
     async def async_set_preset_mode(self, preset_mode: str) -> None:
+        # Presets are mutually exclusive: switch every other active one off
+        # first, then the chosen one on. preset_mode reports the first active
+        # flag (turbo > night > eco > quiet), so a leftover eco would hide quiet.
         s = self._client.state
-        if preset_mode == PRESET_TURBO:
-            if s.night:  await self._client.set_night(False)
-            if s.quiet:  await self._client.set_quiet(False)
-            if s.eco:    await self._client.set_eco(False)
-            await self._client.set_turbo(True)
-        elif preset_mode == PRESET_NIGHT:
-            if s.turbo:  await self._client.set_turbo(False)
-            if s.quiet:  await self._client.set_quiet(False)
-            await self._client.set_night(True)
-        elif preset_mode == PRESET_ECO:
-            if s.turbo:  await self._client.set_turbo(False)
-            await self._client.set_eco(True)
-        elif preset_mode == PRESET_QUIET:
-            if s.turbo:  await self._client.set_turbo(False)
-            await self._client.set_quiet(True)
-        elif preset_mode == PRESET_NONE:
-            if s.turbo:  await self._client.set_turbo(False)
-            if s.night:  await self._client.set_night(False)
-            if s.eco:    await self._client.set_eco(False)
-            if s.quiet:  await self._client.set_quiet(False)
+        c = self._client
+        presets = {
+            PRESET_TURBO: (s.turbo, c.set_turbo),
+            PRESET_NIGHT: (s.night, c.set_night),
+            PRESET_ECO:   (s.eco,   c.set_eco),
+            PRESET_QUIET: (s.quiet, c.set_quiet),
+        }
+        for name, (active, setter) in presets.items():
+            if name != preset_mode and active:
+                await setter(False)
+        if preset_mode in presets:
+            await presets[preset_mode][1](True)
 
     async def async_turn_on(self) -> None:
         mode = self._client.state.mode

@@ -260,7 +260,9 @@ DEVICE → CLIENT:  CMD cmd=0x00 [proto_u16][fw_maj][fw_min][mode][token...]
 - **Вентилятор** (`fan_modes`): auto, low, medium, high
 - **Свинг** (`swing_modes`): off, vertical, horizontal, both → маппинг на `(v_swing, h_swing)`
 - **Пресеты** (`preset_modes`): none, turbo, night, eco, quiet
-  - Взаимоисключающие: установка одного деактивирует остальные
+  - Взаимоисключающие: установка одного сначала выключает все остальные активные, потом включает выбранный
+    (до 0.5.0 eco/quiet/night друг друга не выключали, и `preset_mode` с приоритетом turbo > night > eco > quiet
+    показывал старый пресет)
   - eco и quiet используют cmd=0x42 (разные субтипы)
   - turbo → cmd=0x31, night → cmd=0x32
 
