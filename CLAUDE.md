@@ -26,7 +26,7 @@ Python-скрипты в `tools/` + тесты в `tests/` (`pytest-homeassistan
 ```bash
 pip install cryptography      # обязательна (X25519, AES-CBC); в HA уже есть — в manifest.json НЕ указывать (hassfest с 10.2026 запрещает зависимости ядра)
 pip install zeroconf          # для mDNS-обнаружения (scan) и zeroconf config flow
-pip install zxingcpp          # ОПЦИОНАЛЬНО — декодирование QR из изображения
+pip install zxing-cpp==3.1.1  # декодирование QR из изображения; HA ставит из manifest.json
 ```
 
 `homeassistant` импортируется только в `custom_components/ballu_ac/` и доступен внутри
@@ -315,7 +315,8 @@ DEVICE → CLIENT:  CMD cmd=0x00 [proto_u16][fw_maj][fw_min][mode][token...]
   - Ничего не найдено → `async_step_no_devices`: выбор «Ручная настройка» / «Повторить поиск».
 - **Ручная настройка** (`async_step_manual`): name, host, port, token (32 hex), pubkey (64 hex)
 - **QR-код** (`async_step_qr`): текст QR (JSON/URL/base64/32-char hex) или URL изображения QR
-  - URL изображения: скачивается и декодируется через `zxingcpp` или `pyzbar` (опционально)
+  - URL изображения: скачивается и декодируется через `zxingcpp` (зависимость `zxing-cpp` в manifest.json).
+    Импорты Pillow/zxingcpp и декодирование выполняются в `hass.async_add_executor_job`, вне event loop.
 - **zeroconf** (`async_step_zeroconf`): ПАССИВНОЕ автообнаружение — срабатывает, когда HA сам
   наткнётся на анонс `_syncleo._udp.local.` (не путать с активным `discovery` выше).
   Для известного устройства не предлагает «добавить», а обновляет его IP/ключ (см.
@@ -386,7 +387,7 @@ quit
 
 ## Известные проблемы и TODO
 
-- [ ] Проверить работу QR декодирования из URL (требует `zxingcpp` или `pyzbar`)
+- [ ] Проверить работу QR декодирования из URL на реальном HA (автотесты покрывают PNG и executor)
 - [ ] Протестировать активное `discovery` и пассивное `zeroconf` автообнаружение на реальной сети
 - [ ] Назначение cmd=0x03, 0x09, 0x1e, 0x26, 0x29 не установлено (всегда 0, read-only)
 - [x] Активное mDNS-сканирование сети в config flow со списком устройств (`async_step_discovery`)

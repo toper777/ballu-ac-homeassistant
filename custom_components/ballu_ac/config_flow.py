@@ -110,26 +110,17 @@ def _parse_qr_text(text: str) -> dict[str, str]:
     return result
 
 
-async def _decode_qr_image(image_data: bytes) -> str | None:
-    """Decode a QR code from image bytes using zxingcpp or pyzbar."""
+def _decode_qr_image(image_data: bytes) -> str | None:
+    """Decode QR image bytes in an executor, including the blocking imports."""
     try:
         from PIL import Image
         import io
-        img = Image.open(io.BytesIO(image_data))
-        try:
-            import zxingcpp
+        import zxingcpp
+
+        with Image.open(io.BytesIO(image_data)) as img:
             results = zxingcpp.read_barcodes(img)
             if results:
                 return results[0].text
-        except ImportError:
-            pass
-        try:
-            from pyzbar.pyzbar import decode as pyzbar_decode
-            results = pyzbar_decode(img)
-            if results:
-                return results[0].data.decode("utf-8")
-        except ImportError:
-            pass
     except Exception as e:
         _LOGGER.debug("QR image decode error: %s", e)
     return None
@@ -188,7 +179,7 @@ async def _fetch_and_decode_qr(hass, url: str) -> str | None:
                 if len(data) > _QR_MAX_BYTES:
                     _LOGGER.warning("QR image exceeds %d bytes — aborting", _QR_MAX_BYTES)
                     return None
-            return await _decode_qr_image(data)
+            return await hass.async_add_executor_job(_decode_qr_image, data)
     except Exception as e:
         _LOGGER.debug("QR fetch error: %s", e)
     return None
