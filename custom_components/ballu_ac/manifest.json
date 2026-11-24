@@ -17,7 +17,7 @@
   "requirements": [
     "zxing-cpp==3.1.1"
   ],
-  "version": "0.5.1",
+  "version": "0.5.2",
   "zeroconf": [
     {
       "type": "_syncleo._udp.local."

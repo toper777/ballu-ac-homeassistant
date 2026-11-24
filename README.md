@@ -168,6 +168,9 @@ logger:
 
 - **The token is your device password.** It's stored in Home Assistant's config
   and sent (encrypted) to the device. Anyone with your token can control that AC.
+- Since **v0.5.2**, handshake payloads are omitted from the integration's debug
+  logs. Debug logs from older versions may contain the device token; treat them
+  as sensitive and do not share them without removing it.
 - **mDNS discovery trusts the local network.** Discovery, automatic public-key
   refresh and IP tracking take the device address and public key from mDNS
   announcements (a known device is matched by its MAC). A

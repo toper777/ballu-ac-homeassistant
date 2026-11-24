@@ -465,10 +465,13 @@ class SyncleoClient:
                   self._rx_count, len(data), data[:16].hex())
             return
         seq, ftype, cmd_type, payload = result
+        # Handshake responses contain the device token after the first 5 bytes.
+        # Redact before logging, including retransmissions and short responses.
+        log_payload = "<redacted>" if cmd_type == 0x00 else payload.hex()
         _diag("rx #%d: seq=%d ftype=%s cmd=%s payload=%s",
               self._rx_count, seq, ftype,
               f"0x{cmd_type:02x}" if cmd_type is not None else None,
-              payload.hex() if payload else "")
+              log_payload)
 
         if ftype == 'ACK':
             # ACK frames are NOT encrypted, so a LAN host could spoof them.
