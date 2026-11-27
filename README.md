@@ -51,13 +51,21 @@ supported (their command set differs) and are hidden during discovery.
 You need [HACS](https://hacs.xyz/) installed first. Then:
 
 1. Open **HACS** in the Home Assistant sidebar.
-2. Click the **⋮** menu (top-right) → **Custom repositories**.
-3. Paste the repository URL and pick the category:
+2. Search for **Ballu AC (syncleo)**.
+3. Open it and click **Download**.
+4. **Restart Home Assistant** (Settings → System → ⋮ → Restart).
+
+#### Fallback — custom repository
+
+If **Ballu AC (syncleo)** does not appear in HACS search:
+
+1. In HACS, click the **⋮** menu (top-right) → **Custom repositories**.
+2. Paste the repository URL and pick the category:
    - Repository: `https://github.com/toper777/ballu-ac-homeassistant`
    - Category: **Integration**
    - Click **Add**.
-4. Find **Ballu AC (syncleo)** in the list, open it and click **Download**.
-5. **Restart Home Assistant** (Settings → System → ⋮ → Restart).
+3. Find **Ballu AC (syncleo)** in the list, open it and click **Download**.
+4. **Restart Home Assistant** (Settings → System → ⋮ → Restart).
 
 ### Option B — Manual
 
